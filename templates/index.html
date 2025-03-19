@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Notion Auth via Pipedream</title>
+  </head>
+  <body>
+    <h1>Connect Your Notion Account via Pipedream</h1>
+    <button id="connect-btn">Connect Notion Account</button>
+
+    <!--
+      The Pipedream SDK for the browser is imported as an ES module.
+      In production, verify the URL/version per Pipedream’s docs.
+    -->
+    <script type="module">
+      import { createFrontendClient } from "https://cdn.jsdelivr.net/npm/@pipedream/sdk/browser/+esm";
+
+      const pd = createFrontendClient();
+
+      document.getElementById("connect-btn").addEventListener("click", async () => {
+        try {
+          // Fetch a short-lived connect token from the backend.
+          const response = await fetch("/token");
+          const data = await response.json();
+          const token = data.token;
+
+          // The OAuth App ID is passed from the backend into the template.
+          // Jinja2 renders it into the page.
+          const oauthAppId = "{{ oauth_app_id }}";
+
+          console.log("Token fetched:", token);
+
+          // Initiate the connection using the Pipedream SDK.
+          pd.connectAccount({
+            app: "notion",
+            token: token,
+            onSuccess: ({ id: accountId }) => {
+              console.log(`Account successfully connected: ${accountId}`);
+              alert(`Account successfully connected: ${accountId}`);
+              // Optionally, redirect the user or update your UI
+            },
+            onError: (error) => {
+              console.error("Connection error:", error);
+              alert("Error connecting account: " + error);
+            },
+          });
+        } catch (error) {
+          console.error("Error fetching token:", error);
+          alert("Error fetching token: " + error);
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,17 +1,30 @@
-from fastapi import FastAPI, HTTPException, Query
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+import uuid
+from datetime import datetime, timedelta
 import requests
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
+PIPEDREAM_PROJECT_ID = os.getenv("PIPEDREAM_PROJECT_ID")
+PIPEDREAM_PROJECT_ENVIRONMENT = os.getenv("PIPEDREAM_PROJECT_ENVIRONMENT", "development")
+
 app = FastAPI(title="Pipedream REST API Proxy")
+
+templates = Jinja2Templates(directory="templates")
+
+# Replace with your actual OAuth App ID from Pipedream for Notion
+OAUTH_APP_ID = os.getenv("PIPEDREAM_API_TOKEN")
+PIPEDREAM_API_HOST = os.getenv("PIPEDREAM_API_HOST", "https://api.pipedream.com")
 
 # Retrieve Pipedream API token from environment
 API_TOKEN = os.getenv("PIPEDREAM_API_TOKEN")
 CLIENT_ID = os.getenv("PIPEDREAM_CLIENT_ID")
-CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRET")
+CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRETS")
 
 if not API_TOKEN:
     raise Exception("PIPEDREAM_API_TOKEN not set in environment")
@@ -33,9 +46,50 @@ def proxy_get(endpoint: str, params: dict = None):
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
 
-@app.get("/")
-def root():
-    return {"message": "Pipedream REST API Proxy via FastAPI"}
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    # Pass the OAuth App ID to the template so it can be used by the frontend
+    return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_APP_ID})
+
+
+async def server_connect_token_create(external_user_id: str):
+    """
+    Calls Pipedream's Connect API to generate a short-lived token for the given external user.
+    Uses header-based authentication.
+    """
+    url = f"{BASE_URL}/connect/{PIPEDREAM_PROJECT_ID}/tokens"
+    payload = {
+        "external_user_id": external_user_id,
+        "allowed_origins": [
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://example.com"
+        ]
+    }
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}",
+        "Content-Type": "application/json",
+        "X-PD-Environment": PIPEDREAM_PROJECT_ENVIRONMENT
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+@app.get("/token")
+async def get_token():
+    """
+    Generates and returns a Pipedream Connect token.
+    In production, this token is one-time use and must be freshly generated
+    for each connection request.
+    """
+    external_user_id = str(uuid.uuid4())
+    try:
+        token_data = await server_connect_token_create(external_user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse(token_data)
+
 @app.post("/generate-token")
 def generate_token():
     token_url = 'https://api.pipedream.com/v1/oauth/token'
