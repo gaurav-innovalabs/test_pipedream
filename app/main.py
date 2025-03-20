@@ -1,16 +1,14 @@
-import httpx
+import uuid
+import os
+import requests
 from fastapi import FastAPI, HTTPException, Query, Request, Path
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from app.tools.notion_actions import router as notion_router
-import uuid
-from datetime import datetime, timedelta
-import requests
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Environment variables and constants
 PIPEDREAM_PROJECT_ID = os.getenv("PIPEDREAM_PROJECT_ID")
 PIPEDREAM_PROJECT_ENVIRONMENT = os.getenv("PIPEDREAM_PROJECT_ENVIRONMENT", "development")
 
@@ -27,11 +25,12 @@ PIPEDREAM_API_HOST = os.getenv("PIPEDREAM_API_HOST", "https://api.pipedream.com"
 API_TOKEN = os.getenv("PIPEDREAM_API_TOKEN")
 CLIENT_ID = os.getenv("PIPEDREAM_CLIENT_ID")
 CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRETS")
+OAUTH_APP_ID = os.getenv("PIPEDREAM_API_TOKEN")  # Replace with your actual OAuth App ID
 
 if not API_TOKEN:
     raise Exception("PIPEDREAM_API_TOKEN not set in environment")
 
-app.include_router(notion_router)
+# app.include_router(notion_router)
 
 def proxy_get(endpoint: str, params: dict = None,environment: str|None=None):
     """
@@ -53,6 +52,15 @@ def proxy_get(endpoint: str, params: dict = None,environment: str|None=None):
 async def index(request: Request):
     # Pass the OAuth App ID to the template so it can be used by the frontend
     return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_APP_ID})
+
+
+
+@app.get("/slack", response_class=HTMLResponse)
+async def slack_auth(request: Request):
+    """
+    Render the Slack authentication page.
+    """
+    return templates.TemplateResponse("slack.html", {"request": request, "oauth_app_id": OAUTH_APP_ID})
 
 
 async def server_connect_token_create(external_user_id: str):
