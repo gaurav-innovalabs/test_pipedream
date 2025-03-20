@@ -1,60 +1,39 @@
-import base64
 import uuid
-import os
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request, Path
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from app.accounts_routes import router as account_routes
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.routers.accounts_routes import routes as account_routes
+from app.routers.webhooks import routes as webhook_routes
+from app.tools.gitlab import routes as gitlab_routes
 
-# Environment variables and constants
-PIPEDREAM_PROJECT_ID = os.getenv("PIPEDREAM_PROJECT_ID")
-PIPEDREAM_PROJECT_ENVIRONMENT = os.getenv("PIPEDREAM_PROJECT_ENVIRONMENT", "development")
-PIPEDREAM_API_HOST = os.getenv("PIPEDREAM_API_HOST", "https://api.pipedream.com")
-API_TOKEN = os.getenv("PIPEDREAM_API_TOKEN")
-OAUTH_TOKEN=os.getenv("PIPEDREAM_OAUTH_TOKEN")
-CLIENT_ID = os.getenv("PIPEDREAM_CLIENT_ID")
-CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRETS")
-
-if not API_TOKEN:
-    raise Exception("PIPEDREAM_API_TOKEN not set in environment")
+from app.config import PIPEDREAM_API_HOST, OAUTH_TOKEN, PIPEDREAM_PROJECT_ID, PIPEDREAM_PROJECT_ENVIRONMENT, CLIENT_ID, CLIENT_SECRET, BASE_URL
+from app.helpers import encode_url, proxy_get
 
 app = FastAPI(title="Pipedream REST API Proxy")
 templates = Jinja2Templates(directory="templates")
-
-BASE_URL = f"{PIPEDREAM_API_HOST}/v1"
-
-def proxy_get(endpoint: str, params: dict = None, environment: str|None = None):
-    """
-    Helper function to perform a GET request to the Pipedream API.
-    """
-    headers = {"Authorization": f"Bearer {OAUTH_TOKEN}"}
-    if environment:
-        headers["X-PD-Environment"] = environment
-    url = f"{BASE_URL}{endpoint}"
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-    return response.json()
 app.include_router(account_routes)
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_TOKEN})
+app.include_router(webhook_routes)
+
+app.include_router(gitlab_routes)
+
 @app.post("/webhook", response_class=HTMLResponse)
 async def webhook(request: Request):
     print("--------------------------webhook got the trigger action--------------------------")
     x  = await request.json()
     print(x)
     return JSONResponse({"message": "Webhook triggered successfully!"})
-@app.get("/slack", response_class=HTMLResponse)
-async def slack_auth(request: Request):
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/connect/{auth_type}", response_class=HTMLResponse)
+async def connection_auth(request: Request,auth_type: str = None):
     """
-    Render the Slack authentication page.
+    Render the authentication page.
     """
-    return templates.TemplateResponse("slack.html", {"request": request, "oauth_app_id": OAUTH_TOKEN})
+    if auth_type is None:
+        auth_type = "notion"
+    return templates.TemplateResponse("connection.html", {"request": request, "oauth_app_id": OAUTH_TOKEN,"auth_type": auth_type})
 
 async def server_connect_token_create(external_user_id: str):
     """
@@ -137,10 +116,10 @@ def list_apps(
 def get_app(app_id: str):
     return proxy_get(f"/apps/{app_id}")
 
-@app.get("/connect/{project_id}/actions")
+@app.get("/connect/{project_id}/actions/{app}")
 def get_project_actions(
         project_id: str,
-        app: str = Query(..., description="The app name to get actions for")
+        app: str = Path(..., description="App name, e.g. gitlab", example="gitlab", placeholder="gitlab")
 ):
     """
     Get list of actions for a specific app in a project.
@@ -181,7 +160,16 @@ def execute_action(
           }
         },
         "text": "Hello, this is a test message!",
-        "conversation": "#test-user",
+        "conversation": {
+            "__lv": {
+                "label": "Public channel: test-user",
+                "value": "C0772SYKNN4"
+            }    
+        },
+        # "channel": "#test-user",
+        "thread_broadcast": False,#
+        "unfurl_links": False,#
+        "unfurl_media": False,#
         "mrkdwn": True,
         "as_user": False
     }
@@ -194,45 +182,6 @@ def execute_action(
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
-
-@app.get("/connect/{project_id}/accounts/{account_id}")
-def get_account_details(
-    project_id: str,
-    account_id: str,
-    app: str = Query(None, description="Filter by app"),
-    external_user_id: str = Query(None, description="Filter by external user ID"),
-    include_credentials: bool = Query(False, description="Include credentials in the response")
-):
-    """
-    Retrieve account details for a specific account based on the account ID.
-
-    **Path Parameters:**
-    - `project_id` (str): The project’s ID.
-    - `account_id` (str): The ID of the account you want to retrieve.
-
-    **Query Parameters (Optional):**
-    - `app` (str): Filter by app.
-    - `external_user_id` (str): Filter by external user ID.
-    - `include_credentials` (bool): Include credentials in the response when set to true.
-    """
-    params = {}
-    if app:
-        params["app"] = app
-    if external_user_id:
-        params["external_user_id"] = external_user_id
-    if include_credentials:
-        params["include_credentials"] = "true"
-
-    endpoint = f"/connect/{project_id}/accounts/{account_id}"
-    return proxy_get(endpoint, params=params)
-
-def encode_url(url: str) -> str:
-    """
-    URL safe Base64 encode the given URL.
-    """
-    encoded_bytes = base64.urlsafe_b64encode(url.encode())
-    # Remove padding '=' characters if desired
-    return encoded_bytes.decode().rstrip("=")
 
 @app.post("/send-slack", summary="Send a Slack message via Pipedream Connect Proxy")
 def send_slack_message(
@@ -287,93 +236,3 @@ def send_slack_message(
     #
     # return JSONResponse(response.json())
     pass
-
-# not working ...
-@app.get("/deployed-triggers", summary="List all deployed triggers for a given user")
-def list_deployed_triggers(
-        external_user_id: str = Query(...,
-                                      description="The external user ID in your system on behalf of which you want to deploy the trigger.")
-):
-    """
-    List all deployed triggers for a given user.
-    """
-    params = {"external_user_id": external_user_id}
-    endpoint = f"/connect/{PIPEDREAM_PROJECT_ID}/deployed-triggers"
-    return proxy_get(endpoint, params=params, environment="development")
-
-@app.get("/deployed-triggers/{deployed_component_id}/webhooks",summary="Retrieve webhooks listening to a deployed trigger")
-def retrieve_webhooks(
-            deployed_component_id: str = Path(...,
-                                              description="The deployed component ID for the trigger you’d like to retrieve."),
-            external_user_id: str = Query(None, description="Filter by external user ID")
-    ):
-        """
-        Retrieve the list of webhook URLs listening to a deployed trigger.
-        """
-        params = {}
-        if external_user_id:
-            params["external_user_id"] = external_user_id
-
-        endpoint = f"/connect/{PIPEDREAM_PROJECT_ID}/deployed-triggers/{deployed_component_id}/webhooks/"
-        return proxy_get(endpoint, params=params, environment="development")
-
-@app.post("/create-webhook", summary="Create a webhook and subscribe it to an emitter")
-def create_webhook(
-        url: str = Query(..., description="The endpoint to which you’d like to deliver events."),
-        name: str = Query(..., description="A name to assign to the webhook."),
-        description: str = Query(..., description="A longer description for the webhook.")
-):
-    """
-    Creates a webhook by calling the POST /webhooks endpoint and then creates a subscription
-    to deliver events from an emitter (hardcoded emitter ID) to this webhook.
-
-    Steps:
-      1. Create the webhook using the provided URL, name, and description.
-      2. Extract the webhook ID from the response.
-      3. Create a subscription using the emitter_id (from your event source) and the webhook ID.
-    """
-    # Create the webhook
-    webhook_response = requests.post(
-        f"{BASE_URL}/webhooks",
-        params={
-            "url": url,
-            "name": name,
-            "description": description
-        },
-        headers={
-            "Authorization": f"Bearer {OAUTH_TOKEN}",
-            "Content-Type": "application/json"
-        }
-    )
-    if webhook_response.status_code != 200:
-        raise HTTPException(status_code=webhook_response.status_code, detail=webhook_response.text)
-
-    webhook_data = webhook_response.json()
-    listener_id = webhook_data.get("data",{}).get("id")
-    if not listener_id:
-        raise HTTPException(status_code=500, detail="Webhook creation did not return an ID")
-
-    # Hardcode the emitter_id from your event source (e.g., from https://pipedream.com/sources/dc_76u1QxA)
-    EMITTER_ID = "dc_76u1QxA"
-
-    # Create the subscription
-    subscription_response = requests.post(
-        f"{BASE_URL}/subscriptions",
-        params={
-            "emitter_id": EMITTER_ID,
-            "listener_id": listener_id
-        },
-        headers={
-            "Authorization": f"Bearer {OAUTH_TOKEN}",
-            "Content-Type": "application/json"
-        }
-    )
-    if subscription_response.status_code != 200:
-        raise HTTPException(status_code=subscription_response.status_code, detail=subscription_response.text)
-
-    subscription_data = subscription_response.json()
-
-    return JSONResponse({
-        "webhook": webhook_data,
-        "subscription": subscription_data
-    })
