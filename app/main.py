@@ -2,6 +2,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Path
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from app.tools.notion_actions import router as notion_router
 import uuid
 from datetime import datetime, timedelta
 import requests
@@ -18,6 +19,7 @@ app = FastAPI(title="Pipedream REST API Proxy")
 templates = Jinja2Templates(directory="templates")
 
 # Replace with your actual OAuth App ID from Pipedream for Notion
+BASE_URL = "https://api.pipedream.com/v1"
 OAUTH_APP_ID = os.getenv("PIPEDREAM_API_TOKEN")
 PIPEDREAM_API_HOST = os.getenv("PIPEDREAM_API_HOST", "https://api.pipedream.com")
 
@@ -29,16 +31,14 @@ CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRETS")
 if not API_TOKEN:
     raise Exception("PIPEDREAM_API_TOKEN not set in environment")
 
-# Base URL for the Pipedream API
-BASE_URL = "https://api.pipedream.com/v1"
+app.include_router(notion_router)
 
 def proxy_get(endpoint: str, params: dict = None,environment: str|None=None):
     """
     Helper function to perform a GET request to the Pipedream API.
     """
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_TOKEN}"
     }
     if environment:
         headers["X-PD-Environment"] = environment
@@ -136,23 +136,7 @@ def get_app(app_id: str):
     return proxy_get(f"/apps/{app_id}")
 
 # @app.get("/{project_id}/accounts") # router not found
-# def get_project_accounts(
-#     project_id: str,
-#     app: str = Query(None, description="The ID or name slug of the app"),
-#     oauth_app_id: str = Query(None, description="The ID of the OAuth app"),
-#     external_user_id: str = Query(None, description="The external user ID"),
-#     include_credentials: bool = Query(False, description="Include account credentials in response")
-# ):
-#     params = {} 
-#     if app:
-#         params["app"] = app
-#     if oauth_app_id:
-#         params["oauth_app_id"] = oauth_app_id
-#     if external_user_id:
-#         params["external_user_id"] = external_user_id
-#     if include_credentials:
-#         params["include_credentials"] = include_credentials
-#     return proxy_get(f"/{project_id}/accounts", params=params)
+# def get_project_accounts(project_id: str):
 
 @app.get("/connect/{project_id}/actions")
 def get_project_actions(
@@ -162,13 +146,9 @@ def get_project_actions(
     """
     Get list of actions for a specific app in a project
     """
-    headers = {
-        "Content-Type": "application/json",
-        "X-PD-Environment": "development",
-        "Authorization": f"Bearer {API_TOKEN}"
-    }
     params = {"app": app}
     return proxy_get(f"/connect/{project_id}/actions", params=params,environment="development")
+
 @app.get("/connect/{project_id}/components/{action_name}")
 def get_more_details_of_action(
     project_id: str, 
@@ -179,108 +159,3 @@ def get_more_details_of_action(
     Get list of GitLab commits using Pipedream API
     """
     return proxy_get(f"/connect/{project_id}/components/{action_name}", environment="development")
-# Add endpoints for Notion actions using Pipedream API
-
-@app.get("/notion/databases")
-def list_notion_databases():
-    """
-    Fetches a list of Notion databases accessible via Pipedream.
-    """
-    return proxy_get("/apps/notion/databases")
-
-
-@app.get("/notion/databases/{database_id}/query")
-def query_notion_database(database_id: str, filter: str = Query(None)):
-    """
-    Queries a specific Notion database with optional filters.
-    """
-    endpoint = f"/apps/notion/databases/{database_id}/query"
-    params = {}
-    if filter:
-        params["filter"] = filter
-    return proxy_get(endpoint, params=params)
-
-
-@app.get("/notion/pages/{page_id}")
-def get_notion_page(page_id: str):
-    """
-    Fetches a specific Notion page by page ID.
-    """
-    endpoint = f"/apps/notion/pages/{page_id}"
-    return proxy_get(endpoint)
-
-
-@app.post("/notion/pages")
-def create_notion_page(database_id: str, page_title: str):
-    """
-    Creates a new page in a specified Notion database.
-    """
-    endpoint = f"/apps/notion/pages"
-    payload = {
-        "parent": {"database_id": database_id},
-        "properties": {
-            "Name": {
-                "title": [
-                    {
-                        "text": {"content": page_title}
-                    }
-                ]
-            }
-        }
-    }
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    url = f"{BASE_URL}{endpoint}"
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-    return response.json()
-
-
-@app.patch("/notion/pages/{page_id}")
-def update_notion_page(page_id: str, new_title: str):
-    """
-    Updates the title of a Notion page.
-    """
-    endpoint = f"/apps/notion/pages/{page_id}"
-    payload = {
-        "properties": {
-            "Name": {
-                "title": [
-                    {
-                        "text": {"content": new_title}
-                    }
-                ]
-            }
-        }
-    }
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    url = f"{BASE_URL}{endpoint}"
-    response = requests.patch(url, json=payload, headers=headers)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-    return response.json()
-
-
-@app.delete("/notion/pages/{page_id}")
-def delete_notion_page(page_id: str):
-    """
-    Deletes or archives a Notion page (depending on Notion API capability).
-    """
-    endpoint = f"/apps/notion/pages/{page_id}"
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    url = f"{BASE_URL}{endpoint}"
-    # Notion API archives pages rather than deletes
-    payload = {"archived": True}
-    response = requests.patch(url, json=payload, headers=headers)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-    return response.json()
