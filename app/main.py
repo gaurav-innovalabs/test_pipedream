@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from app.routers.accounts_routes import routes as account_routes
 from app.routers.webhooks import routes as webhook_routes
 from app.tools.gitlab import routes as gitlab_routes
+from app.tools.slack import routes as slack_routes
 
 from app.config import PIPEDREAM_API_HOST, OAUTH_TOKEN, PIPEDREAM_PROJECT_ID, PIPEDREAM_PROJECT_ENVIRONMENT, CLIENT_ID, CLIENT_SECRET, BASE_URL
 from app.helpers import encode_url, proxy_get
@@ -17,6 +18,7 @@ app.include_router(account_routes)
 app.include_router(webhook_routes)
 
 app.include_router(gitlab_routes)
+app.include_router(slack_routes)
 
 @app.post("/webhook", response_class=HTMLResponse)
 async def webhook(request: Request):

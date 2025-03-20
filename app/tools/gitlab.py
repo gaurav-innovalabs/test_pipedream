@@ -35,6 +35,38 @@ def execute_gitlab(
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
 
+@routes.post("/connect/{project_id}/components/{action_name}/run/notion")
+def execute_notion(
+        project_id: str,
+):
+    """
+    Execute a specific action for a user.
+    """
+    url = f"{BASE_URL}/connect/{project_id}/actions/run"
+    payload = {
+        "external_user_id": "e7a1120c-0aed-4aa3-b9d7-c335dca356c7",
+        "id": "notion-search",
+        "configured_props": {
+            "notion": {
+                "authProvisionId": "apn_Dph5vrn"
+            },
+            "title": "PrioHire",
+            # "filter": "page",
+            # "sortDirection": "ascending",
+            # "pageSize": 100
+        }
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OAUTH_TOKEN}",
+        "X-PD-Environment": "development"
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+
 @routes.post("/proxy/{project_id}/send-gitlab", summary="Send a GitLab request via Pipedream Connect Proxy")
 def send_gitlab_request(
         project_id: str = Path(..., description="Project ID, e.g. proj_W7srqA0"),
