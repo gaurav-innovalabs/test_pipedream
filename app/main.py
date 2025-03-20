@@ -157,6 +157,36 @@ def get_more_details_of_action(
     Get more details of a specific action.
     """
     return proxy_get(f"/connect/{project_id}/components/{action_name}", environment="development")
+@app.get("/connect/{project_id}/accounts/{account_id}")
+def get_account_details(
+    project_id: str,
+    account_id: str,
+    app: str = Query(None, description="Filter by app"),
+    external_user_id: str = Query(None, description="Filter by external user ID"),
+    include_credentials: bool = Query(False, description="Include credentials in the response")
+):
+    """
+    Retrieve account details for a specific account based on the account ID.
+
+    **Path Parameters:**
+    - `project_id` (str): The project’s ID.
+    - `account_id` (str): The ID of the account you want to retrieve.
+
+    **Query Parameters (Optional):**
+    - `app` (str): Filter by app.
+    - `external_user_id` (str): Filter by external user ID.
+    - `include_credentials` (bool): Include credentials in the response when set to true.
+    """
+    params = {}
+    if app:
+        params["app"] = app
+    if external_user_id:
+        params["external_user_id"] = external_user_id
+    if include_credentials:
+        params["include_credentials"] = "true"
+
+    endpoint = f"/connect/{project_id}/accounts/{account_id}"
+    return proxy_get(endpoint, params=params)
 
 def encode_url(url: str) -> str:
     """
@@ -220,6 +250,21 @@ def send_slack_message(
     # return JSONResponse(response.json())
     pass
 
+@app.get("/deployed-triggers/{deployed_component_id}/webhooks",summary="Retrieve webhooks listening to a deployed trigger")
+def retrieve_webhooks(
+            deployed_component_id: str = Path(...,
+                                              description="The deployed component ID for the trigger you’d like to retrieve."),
+            external_user_id: str = Query(None, description="Filter by external user ID")
+    ):
+        """
+        Retrieve the list of webhook URLs listening to a deployed trigger.
+        """
+        params = {}
+        if external_user_id:
+            params["external_user_id"] = external_user_id
+
+        endpoint = f"/connect/{PIPEDREAM_PROJECT_ID}/deployed-triggers/{deployed_component_id}/webhooks/"
+        return proxy_get(endpoint, params=params, environment="development")
 
 @app.post("/create-webhook", summary="Create a webhook and subscribe it to an emitter")
 def create_webhook(
