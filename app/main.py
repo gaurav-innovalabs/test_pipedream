@@ -5,6 +5,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request, Path
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from app.accounts_routes import router as account_routes
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -38,7 +39,7 @@ def proxy_get(endpoint: str, params: dict = None, environment: str|None = None):
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
-
+app.include_router(account_routes)
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_TOKEN})
@@ -157,6 +158,43 @@ def get_more_details_of_action(
     Get more details of a specific action.
     """
     return proxy_get(f"/connect/{project_id}/components/{action_name}", environment="development")
+#
+@app.post("/connect/{project_id}/components/{action_name}/run")
+def execute_action(
+        project_id: str,
+        action_name: str = Path(..., description="Component name, e.g. gitlab-list-commits",
+                                example="gitlab-list-commits", placeholder="gitlab-list-commits"),
+        # external_user_id: str = Query(..., description="External user ID, e.g. abc-123"),
+        # prop_name: str = Query(..., description="Property name to configure, e.g. projectId"),
+        # configured_props: dict = {}
+):
+    """
+    Execute a specific action for a user.
+    """
+    url = f"{BASE_URL}/connect/{project_id}/actions/run"
+    payload = {
+        "external_user_id": "31b294c4-450f-446c-ad4d-c49178f577de",
+        "id": "slack-send-message",
+        "configured_props": {
+          "slack": {
+            "authProvisionId": "apn_kVh9AoD"
+          }
+        },
+        "text": "Hello, this is a test message!",
+        "conversation": "#test-user",
+        "mrkdwn": True,
+        "as_user": False
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OAUTH_TOKEN}",
+        "X-PD-Environment": "development"
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
+
 @app.get("/connect/{project_id}/accounts/{account_id}")
 def get_account_details(
     project_id: str,
@@ -249,6 +287,19 @@ def send_slack_message(
     #
     # return JSONResponse(response.json())
     pass
+
+# not working ...
+@app.get("/deployed-triggers", summary="List all deployed triggers for a given user")
+def list_deployed_triggers(
+        external_user_id: str = Query(...,
+                                      description="The external user ID in your system on behalf of which you want to deploy the trigger.")
+):
+    """
+    List all deployed triggers for a given user.
+    """
+    params = {"external_user_id": external_user_id}
+    endpoint = f"/connect/{PIPEDREAM_PROJECT_ID}/deployed-triggers"
+    return proxy_get(endpoint, params=params, environment="development")
 
 @app.get("/deployed-triggers/{deployed_component_id}/webhooks",summary="Retrieve webhooks listening to a deployed trigger")
 def retrieve_webhooks(
