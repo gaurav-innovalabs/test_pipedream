@@ -14,6 +14,7 @@ PIPEDREAM_PROJECT_ID = os.getenv("PIPEDREAM_PROJECT_ID")
 PIPEDREAM_PROJECT_ENVIRONMENT = os.getenv("PIPEDREAM_PROJECT_ENVIRONMENT", "development")
 PIPEDREAM_API_HOST = os.getenv("PIPEDREAM_API_HOST", "https://api.pipedream.com")
 API_TOKEN = os.getenv("PIPEDREAM_API_TOKEN")
+OAUTH_TOKEN=os.getenv("PIPEDREAM_OAUTH_TOKEN")
 CLIENT_ID = os.getenv("PIPEDREAM_CLIENT_ID")
 CLIENT_SECRET = os.getenv("PIPEDREAM_CLIENT_SECRETS")
 
@@ -24,13 +25,12 @@ app = FastAPI(title="Pipedream REST API Proxy")
 templates = Jinja2Templates(directory="templates")
 
 BASE_URL = f"{PIPEDREAM_API_HOST}/v1"
-OAUTH_APP_ID = API_TOKEN  # Using API token as OAuth App ID in this example
 
 def proxy_get(endpoint: str, params: dict = None, environment: str|None = None):
     """
     Helper function to perform a GET request to the Pipedream API.
     """
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    headers = {"Authorization": f"Bearer {OAUTH_TOKEN}"}
     if environment:
         headers["X-PD-Environment"] = environment
     url = f"{BASE_URL}{endpoint}"
@@ -41,7 +41,7 @@ def proxy_get(endpoint: str, params: dict = None, environment: str|None = None):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_APP_ID})
+    return templates.TemplateResponse("index.html", {"request": request, "oauth_app_id": OAUTH_TOKEN})
 @app.post("/webhook", response_class=HTMLResponse)
 async def webhook(request: Request):
     print("--------------------------webhook got the trigger action--------------------------")
@@ -53,7 +53,7 @@ async def slack_auth(request: Request):
     """
     Render the Slack authentication page.
     """
-    return templates.TemplateResponse("slack.html", {"request": request, "oauth_app_id": OAUTH_APP_ID})
+    return templates.TemplateResponse("slack.html", {"request": request, "oauth_app_id": OAUTH_TOKEN})
 
 async def server_connect_token_create(external_user_id: str):
     """
@@ -69,7 +69,7 @@ async def server_connect_token_create(external_user_id: str):
         ]
     }
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
+        "Authorization": f"Bearer {OAUTH_TOKEN}",
         "Content-Type": "application/json",
         "X-PD-Environment": PIPEDREAM_PROJECT_ENVIRONMENT
     }
@@ -173,60 +173,52 @@ def send_slack_message(
         text: str = Query(..., description="The message text to send"),
         channel: str = Query(..., description="Slack channel ID, e.g. C03NA8B4VA9")
 ):
-    """
-    Sends a Slack message to a specified channel using Pipedream’s Connect Proxy.
-
-    It performs the following steps:
-      1. Base64 URL-safe encodes the Slack API endpoint.
-      2. Obtains an OAuth access token using client credentials.
-      3. Constructs the Pipedream proxy URL including query parameters for `external_user_id` and `account_id`.
-      4. Sends the message payload to Slack via the proxy.
-    """
-    # The Slack API endpoint to send messages.
-    slack_api_url = "https://slack.com/api/chat.postMessage"
-    encoded_url = encode_url(slack_api_url)
-
-    # Build the proxy URL for the Pipedream Connect proxy
-    proxy_url = (
-        f"{BASE_URL}/connect/{PIPEDREAM_PROJECT_ID}/proxy/{encoded_url}"
-        f"?external_user_id={external_user_id}&account_id={account_id}"
-    )
-
-    # First, obtain an OAuth access token using client credentials.
-    token_url = f"{BASE_URL}/oauth/token"
-    token_payload = {
-        "grant_type": "client_credentials",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET
-    }
-    token_response = requests.post(token_url, json=token_payload)
-    if token_response.status_code != 200:
-        raise HTTPException(
-            status_code=token_response.status_code,
-            detail=f"Error generating OAuth token: {token_response.text}"
-        )
-    access_token = token_response.json().get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=500, detail="No access token received")
-
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "x-pd-environment": PIPEDREAM_PROJECT_ENVIRONMENT,
-        "Content-Type": "application/json"
-    }
-
-    # Slack message payload
-    payload = {
-        "text": text,
-        "channel": channel
-    }
-
-    # Send the message using the Pipedream proxy
-    response = requests.post(proxy_url, json=payload, headers=headers)
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-
-    return JSONResponse(response.json())
+    # # The Slack API endpoint to send messages.
+    # slack_api_url = "https://slack.com/api/chat.postMessage"
+    # encoded_url = encode_url(slack_api_url)
+    #
+    # # Build the proxy URL for the Pipedream Connect proxy
+    # proxy_url = (
+    #     f"{BASE_URL}/connect/{PIPEDREAM_PROJECT_ID}/proxy/{encoded_url}"
+    #     f"?external_user_id={external_user_id}&account_id={account_id}"
+    # )
+    #
+    # # First, obtain an OAuth access token using client credentials.
+    # token_url = f"{BASE_URL}/oauth/token"
+    # token_payload = {
+    #     "grant_type": "client_credentials",
+    #     "client_id": CLIENT_ID,
+    #     "client_secret": CLIENT_SECRET
+    # }
+    # token_response = requests.post(token_url, json=token_payload)
+    # if token_response.status_code != 200:
+    #     raise HTTPException(
+    #         status_code=token_response.status_code,
+    #         detail=f"Error generating OAuth token: {token_response.text}"
+    #     )
+    # access_token = token_response.json().get("access_token")
+    # if not access_token:
+    #     raise HTTPException(status_code=500, detail="No access token received")
+    #
+    # headers = {
+    #     "Authorization": f"Bearer {access_token}",
+    #     "x-pd-environment": PIPEDREAM_PROJECT_ENVIRONMENT,
+    #     "Content-Type": "application/json"
+    # }
+    #
+    # # Slack message payload
+    # payload = {
+    #     "text": text,
+    #     "channel": channel
+    # }
+    #
+    # # Send the message using the Pipedream proxy
+    # response = requests.post(proxy_url, json=payload, headers=headers)
+    # if response.status_code != 200:
+    #     raise HTTPException(status_code=response.status_code, detail=response.text)
+    #
+    # return JSONResponse(response.json())
+    pass
 
 
 @app.post("/create-webhook", summary="Create a webhook and subscribe it to an emitter")
@@ -253,7 +245,7 @@ def create_webhook(
             "description": description
         },
         headers={
-            "Authorization": f"Bearer {API_TOKEN}",
+            "Authorization": f"Bearer {OAUTH_TOKEN}",
             "Content-Type": "application/json"
         }
     )
@@ -276,7 +268,7 @@ def create_webhook(
             "listener_id": listener_id
         },
         headers={
-            "Authorization": f"Bearer {API_TOKEN}",
+            "Authorization": f"Bearer {OAUTH_TOKEN}",
             "Content-Type": "application/json"
         }
     )
