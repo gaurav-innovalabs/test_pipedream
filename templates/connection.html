@@ -21,14 +21,18 @@
           const token = data.token;
 
           // The OAuth App ID is passed from the backend into the template.
-          const oauthAppId = "{{ oauth_app_id }}";
+          const oauthClientId = "{{ oauthClientId }}";
           const app_type = "{{ auth_type }}";
           console.log("Token fetched:", token);
-
-          // Initiate the connection using the Pipedream SDK.
-          pd.connectAccount({
+          let connection_params = {
             app: app_type,
             token: token,
+          };
+          if (oauthClientId !== null) {
+            connection_params["oauthAppId"] = oauthClientId;
+          }          // Initiate the connection using the Pipedream SDK.
+          pd.connectAccount({
+            ...connection_params,
             onSuccess: ({ id: accountId }) => {
               console.log(`${app_type} account successfully connected: ${accountId}`);
               alert(`${app_type} account successfully connected: ${accountId}`);

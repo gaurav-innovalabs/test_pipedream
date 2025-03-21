@@ -29,13 +29,13 @@ async def webhook(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/connect/{auth_type}", response_class=HTMLResponse)
-async def connection_auth(request: Request,auth_type: str = None):
+async def connection_auth(request: Request,auth_type: str = None,oauth_client_id: str = Query(None, description="OAuth Custom Client ID")):
     """
     Render the authentication page.
     """
     if auth_type is None:
         auth_type = "notion"
-    return templates.TemplateResponse("connection.html", {"request": request, "oauth_app_id": OAUTH_TOKEN,"auth_type": auth_type})
+    return templates.TemplateResponse("connection.html", {"request": request, "oauthClientId": oauth_client_id,"auth_type": auth_type})
 
 async def server_connect_token_create(external_user_id: str):
     """
